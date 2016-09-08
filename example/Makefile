@@ -8,3 +8,7 @@ test1: ../scan_dir.o test1.o
 	g++ -o $@ $^ $(CPPFLAGS)
 %.o : %.c
 	g++ $@ $< $(CPPFLAGS)
+
+.PHONY: clean
+clean:
+	rm test1.o test1

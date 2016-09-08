@@ -7,6 +7,18 @@
 
 using namespace std;
 
+const char *scan_dir::hints[scan_dir::ERR_END - scan_dir::SUCCESS + 1] = 
+{
+	"success.",
+
+	"err_sys_start.(If you see it, you may use ERR_SYS_START badly)",
+	"opendir",
+	"readdir()",
+	"err_sys_end.(If you see it, you may use ERR_SYS_END badly)",
+
+	"end.(If you see it, you may use ERR_END badly)"
+};
+
 scan_dir::scan_dir(const string &pathname, int max_depth):
 	d_max_depth(max_depth), d_pathname(pathname)
 {
@@ -26,7 +38,7 @@ int scan_dir::add_action(int depth, unsigned char type, scan_dir::dirent_action_
 		{
 			iter1->d_fun = fun;
 			iter1->d_data = data;			
-			return 0;
+			return scan_dir::SUCCESS;
 		}
 	}
 
@@ -36,7 +48,7 @@ int scan_dir::add_action(int depth, unsigned char type, scan_dir::dirent_action_
 	action.d_fun = fun;
 	action.d_data = data;
 	l_actions.push_front(action);
-	return 0;
+	return scan_dir::SUCCESS;
 }
 
 int scan_dir::scan()
@@ -44,11 +56,11 @@ int scan_dir::scan()
 	dirent_stack ds;
 	if((ds.d_dir = opendir(d_pathname.c_str())) == NULL)
 	{
-		perror("scan_dir::scan, opendir");
-		return -1;
+		return scan_dir::ERR_SYS_OPENDIR;
 	}
 	ds.d_name = d_pathname;
-
+	
+	d_stack.clear();
 	d_stack.push_back(ds);
 
 	while(d_stack.size() > 0)
@@ -80,11 +92,16 @@ int scan_dir::scan()
 			}
 			if(get_cur_depth() < d_max_depth && entry->d_type & DT_DIR)
 			{
-				if((dir = opendir((cur_pathname + entry->d_name).c_str())) == NULL)
+				DIR *tmp_dir;
+				if((tmp_dir = opendir((cur_pathname + entry->d_name).c_str())) == NULL)
 				{
-					perror("scan_dir::scan, operdir");
-					return -1;
+					if(errno == ENOENT)
+					{
+						continue;
+					}
+					return scan_dir::ERR_SYS_OPENDIR;
 				}
+				dir = tmp_dir;
 				dirent_stack ds;
 				ds.d_dir = dir;
 				ds.d_name = entry->d_name;
@@ -99,7 +116,9 @@ int scan_dir::scan()
 			d_stack.pop_back();
 		}
 	}
+	return scan_dir::SUCCESS;
 }
+
 list<list<scan_dir::dirent_action_t>>::iterator scan_dir::get_depth_list(int depth, bool create)
 {
 	for(std::list<std::list<dirent_action_t>>::iterator iter = d_actions.begin(); iter != d_actions.end(); ++iter)
@@ -130,6 +149,7 @@ list<list<scan_dir::dirent_action_t>>::iterator scan_dir::get_depth_list(int dep
 	return d_actions.end();
 }
 
+inline
 string scan_dir::get_cur_pathname()
 {
 	ostringstream oss;
@@ -139,3 +159,20 @@ string scan_dir::get_cur_pathname()
 	}
 	return oss.str();
 }
+
+const char *scan_dir::return_hints(int ret)
+{
+	if(ret < scan_dir::SUCCESS || ret > scan_dir::ERR_END)
+	{   
+		return NULL;
+	}   
+
+	if(ret > scan_dir::ERR_SYS_START && ret < scan_dir::ERR_SYS_END)
+	{   
+		static char buf[128];
+		snprintf(buf, sizeof(buf),  "%s: %s\n", hints[ret], strerror(errno));
+		return buf;
+	}   
+	return hints[ret];
+}
+
